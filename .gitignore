@@ -1,7 +1,4 @@
 node_modules/
-server/mepia.db
-public/uploads/*
-!public/uploads/.gitkeep
 .DS_Store
 
 Claude outputs/
