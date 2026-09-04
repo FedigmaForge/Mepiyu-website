@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mepiyu Wander Travels — Himalayan Trip Planning</title>
+<meta name="description" content="Plan your Himalayan trip — Manali, Shimla, Kasol, Jibhi, Nainital and more. Build your itinerary and chat with us on WhatsApp.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="icon" type="image/jpeg" href="/assets/logo.jpg">
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+
+<header class="site-header">
+  <div class="wrap header-inner">
+    <a href="#top" class="brand">
+      <span class="brand-mark">
+        <img src="/assets/logo.jpg" alt="Mepiyu Wander Travels logo" width="52" height="52">
+      </span>
+      <span class="brand-text">
+        <span class="brand-name">Mepiyu Wander Travels</span>
+        <span class="brand-tagline" id="brandTagline">Explore. Dream. Discover.</span>
+      </span>
+    </a>
+    <nav class="site-nav" id="siteNav">
+      <a href="#plan">Plan a trip</a>
+      <a href="#destinations">Destinations</a>
+      <a href="#packages">Packages</a>
+      <a href="#gallery">Gallery</a>
+      <a href="#about">About</a>
+      <a href="#contact">Contact</a>
+    </nav>
+    <a class="btn btn-whatsapp header-cta" id="headerWhatsapp" target="_blank" rel="noopener">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M17.6 6.3A8.9 8.9 0 0 0 4 17.4L3 22l4.7-1.2a8.9 8.9 0 0 0 4.3 1.1h0a8.9 8.9 0 0 0 8.9-8.9 8.9 8.9 0 0 0-2.3-6.7Zm-6.6 13.7h0a7.4 7.4 0 0 1-3.8-1l-.3-.2-2.8.7.7-2.7-.2-.3a7.4 7.4 0 1 1 13.8-3.7 7.4 7.4 0 0 1-7.4 7.2Zm4-5.5c-.2-.1-1.3-.6-1.5-.7-.2-.1-.4-.1-.5.1l-.7.9c-.1.2-.3.2-.5.1-.7-.3-1.5-.8-2.1-1.5-.4-.5-.6-.9-.7-1.1-.1-.2 0-.3.1-.4l.4-.5.1-.2v-.4c0-.1-.5-1.2-.7-1.7-.2-.4-.4-.4-.5-.4h-.5c-.2 0-.4.1-.6.3-.2.2-.8.8-.8 2s.8 2.3.9 2.5c.1.1 1.6 2.5 3.9 3.4.5.2 1 .4 1.3.5.5.2 1 .1 1.4.1.4-.1 1.3-.5 1.5-1 .2-.5.2-1 .1-1-.1-.1-.2-.1-.4-.2Z"/></svg>
+      Chat on WhatsApp
+    </a>
+    <button class="nav-toggle" id="navToggle" aria-label="Toggle menu" aria-expanded="false">
+      <span></span><span></span><span></span>
+    </button>
+  </div>
+</header>
+
+<main id="top">
+
+  <!-- HERO + PLANNER -->
+  <section class="hero" id="plan">
+    <div class="wrap hero-inner">
+      <div class="hero-copy">
+        <p class="eyebrow">Himachal &amp; Uttarakhand, mapped out for you</p>
+        <h1 id="heroHeading">Plan your next Himalayan escape</h1>
+        <p class="hero-sub" id="heroSub">Handpicked mountain getaways — tell us your dates, we'll build the trip.</p>
+      </div>
+
+      <form class="planner-card" id="plannerForm">
+        <h2 class="planner-title">Start planning</h2>
+        <div class="search-row">
+          <label class="field field-dest">
+            <span>Where do you want to go?</span>
+            <select id="plannerDestination" required>
+              <option value="" disabled selected>Choose a destination</option>
+            </select>
+          </label>
+          <label class="field field-month">
+            <span>Travel month</span>
+            <input type="month" id="plannerMonth">
+          </label>
+          <label class="field field-travellers">
+            <span>Travellers</span>
+            <input type="number" id="plannerTravellers" min="1" max="20" value="2">
+          </label>
+        </div>
+        <p class="search-match" id="searchMatch" hidden></p>
+        <label class="field">
+          <span>Anything else we should know?</span>
+          <textarea id="plannerNotes" rows="2" placeholder="e.g. honeymoon trip, need a homestay, travelling with kids..."></textarea>
+        </label>
+        <button type="submit" class="btn btn-whatsapp btn-block">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M17.6 6.3A8.9 8.9 0 0 0 4 17.4L3 22l4.7-1.2a8.9 8.9 0 0 0 4.3 1.1h0a8.9 8.9 0 0 0 8.9-8.9 8.9 8.9 0 0 0-2.3-6.7Zm-6.6 13.7h0a7.4 7.4 0 0 1-3.8-1l-.3-.2-2.8.7.7-2.7-.2-.3a7.4 7.4 0 1 1 13.8-3.7 7.4 7.4 0 0 1-7.4 7.2Z"/></svg>
+          Send this trip to WhatsApp
+        </button>
+        <p class="planner-hint">Pick a destination to see matching packages below, or send full details straight to WhatsApp.</p>
+      </form>
+    </div>
+  </section>
+
+  <!-- DESTINATIONS -->
+  <section class="section" id="destinations">
+    <div class="wrap">
+      <div class="section-head">
+        <h2>Where to go</h2>
+        <p>Ten mountain destinations across Himachal Pradesh and Uttarakhand, from snow passes to riverside villages.</p>
+      </div>
+      <div class="dest-grid" id="destGrid"></div>
+    </div>
+  </section>
+
+  <!-- PACKAGES -->
+  <section class="section section-alt" id="packages">
+    <div class="wrap">
+      <div class="section-head">
+        <h2>Ready-made packages</h2>
+        <p>Fixed itineraries with hotels, meals and private transfers included. Every package can be customised.</p>
+      </div>
+      <p class="pkg-filter-banner" id="pkgFilterBanner" hidden>
+        Showing packages for <strong id="pkgFilterName"></strong>
+        <button type="button" id="pkgFilterClear">Show all</button>
+      </p>
+      <div class="pkg-list" id="pkgList"></div>
+    </div>
+  </section>
+
+  <!-- ABOUT -->
+  <section class="section about" id="about">
+    <div class="wrap about-inner">
+      <div class="about-copy">
+        <h2>About Mepiyu Wander Travels</h2>
+        <p id="aboutText">Mepiyu Wander Travels designs small-group and custom Himalayan trips.</p>
+        <ul class="about-points">
+          <li>Private, AC transfers for every trip</li>
+          <li>Hand-picked hotels and homestays</li>
+          <li>Local guides who know the back roads</li>
+          <li>One point of contact, start to finish</li>
+        </ul>
+      </div>
+      <div class="about-figure">
+        <img src="/assets/logo.jpg" alt="Mepiyu Wander Travels logo">
+      </div>
+    </div>
+  </section>
+
+  <!-- GALLERY -->
+  <section class="section" id="gallery">
+    <div class="wrap">
+      <div class="section-head">
+        <h2>From the trail</h2>
+        <p>Photos from recent trips.</p>
+      </div>
+      <div class="gallery-grid" id="galleryGrid"></div>
+    </div>
+  </section>
+
+  <!-- CONTACT -->
+  <section class="section section-alt" id="contact">
+    <div class="wrap contact-inner">
+      <div>
+        <h2>Talk to us directly</h2>
+        <p>Fastest way to reach us is WhatsApp — most questions get answered same day.</p>
+        <div class="contact-list">
+          <a class="contact-row" id="contactWhatsapp" target="_blank" rel="noopener">
+            <span class="contact-label">WhatsApp</span>
+            <span id="contactWhatsappText">Chat with us</span>
+          </a>
+          <div class="contact-row">
+            <span class="contact-label">Phone</span>
+            <span id="contactPhone">—</span>
+          </div>
+          <div class="contact-row">
+            <span class="contact-label">Email</span>
+            <span id="contactEmail">—</span>
+          </div>
+          <div class="contact-row">
+            <span class="contact-label">Based in</span>
+            <span id="contactAddress">—</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer class="site-footer">
+  <div class="wrap footer-inner">
+    <div class="footer-brand">
+      <span class="footer-logo"><img src="/assets/logo.jpg" alt="Mepiyu Wander Travels logo" width="34" height="34"></span>
+      <p>&copy; <span id="year"></span> <span id="footerLegalName">Mepiyu Wander Travels</span>. All rights reserved.</p>
+    </div>
+    <div class="footer-links">
+      <a href="https://fedigmaforge.com" target="_blank" rel="noopener" class="footer-credit">Developed by Fedigma</a>
+      <a href="/admin" class="footer-admin-link">Admin</a>
+    </div>
+  </div>
+</footer>
+
+<a class="whatsapp-fab" id="fabWhatsapp" target="_blank" rel="noopener" aria-label="Chat on WhatsApp">
+  <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M17.6 6.3A8.9 8.9 0 0 0 4 17.4L3 22l4.7-1.2a8.9 8.9 0 0 0 4.3 1.1h0a8.9 8.9 0 0 0 8.9-8.9 8.9 8.9 0 0 0-2.3-6.7Zm-6.6 13.7h0a7.4 7.4 0 0 1-3.8-1l-.3-.2-2.8.7.7-2.7-.2-.3a7.4 7.4 0 1 1 13.8-3.7 7.4 7.4 0 0 1-7.4 7.2Zm4-5.5c-.2-.1-1.3-.6-1.5-.7-.2-.1-.4-.1-.5.1l-.7.9c-.1.2-.3.2-.5.1-.7-.3-1.5-.8-2.1-1.5-.4-.5-.6-.9-.7-1.1-.1-.2 0-.3.1-.4l.4-.5.1-.2v-.4c0-.1-.5-1.2-.7-1.7-.2-.4-.4-.4-.5-.4h-.5c-.2 0-.4.1-.6.3-.2.2-.8.8-.8 2s.8 2.3.9 2.5c.1.1 1.6 2.5 3.9 3.4.5.2 1 .4 1.3.5.5.2 1 .1 1.4.1.4-.1 1.3-.5 1.5-1 .2-.5.2-1 .1-1-.1-.1-.2-.1-.4-.2Z"/></svg>
+</a>
+
+<script src="/js/main.js"></script>
+</body>
+</html>

@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admin — Mepiyu Wander Travels</title>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/admin/css/admin.css">
+</head>
+<body>
+
+<div id="loginScreen" class="login-screen">
+  <form id="loginForm" class="login-card">
+    <h1>Mepiyu Admin</h1>
+    <p class="muted">Sign in to edit the website.</p>
+    <label class="field">
+      <span>Username</span>
+      <input type="text" id="loginUsername" autocomplete="username" required>
+    </label>
+    <label class="field">
+      <span>Password</span>
+      <input type="password" id="loginPassword" autocomplete="current-password" required>
+    </label>
+    <p class="error" id="loginError"></p>
+    <button type="submit" class="btn btn-primary btn-block">Log in</button>
+    <a href="/" class="back-link">← Back to site</a>
+  </form>
+</div>
+
+<div id="dashboard" class="dashboard hidden">
+  <aside class="sidebar">
+    <div class="sidebar-brand">Mepiyu Admin</div>
+    <nav class="sidebar-nav">
+      <button class="nav-btn active" data-tab="settings">Site settings</button>
+      <button class="nav-btn" data-tab="destinations">Destinations</button>
+      <button class="nav-btn" data-tab="packages">Packages</button>
+      <button class="nav-btn" data-tab="gallery">Gallery</button>
+      <button class="nav-btn" data-tab="account">Account</button>
+    </nav>
+    <div class="sidebar-foot">
+      <a href="/" target="_blank" class="ghost-link">View site ↗</a>
+      <button id="logoutBtn" class="ghost-link">Log out</button>
+    </div>
+  </aside>
+
+  <main class="content">
+    <div id="toast" class="toast hidden"></div>
+
+    <section class="tab-panel" id="tab-settings">
+      <h2>Site settings</h2>
+      <p class="muted">These control the header, hero text, WhatsApp number and contact details shown on the public site.</p>
+      <form id="settingsForm" class="stack-form"></form>
+    </section>
+
+    <section class="tab-panel hidden" id="tab-destinations">
+      <div class="panel-head">
+        <h2>Destinations</h2>
+        <button class="btn btn-primary" id="addDestinationBtn">+ Add destination</button>
+      </div>
+      <div id="destinationList" class="admin-list"></div>
+    </section>
+
+    <section class="tab-panel hidden" id="tab-packages">
+      <div class="panel-head">
+        <h2>Packages</h2>
+        <button class="btn btn-primary" id="addPackageBtn">+ Add package</button>
+      </div>
+      <div id="packageList" class="admin-list"></div>
+    </section>
+
+    <section class="tab-panel hidden" id="tab-gallery">
+      <div class="panel-head">
+        <h2>Gallery</h2>
+      </div>
+      <form id="galleryForm" class="inline-form">
+        <label class="field">
+          <span>Upload photo</span>
+          <input type="file" id="galleryFile" accept="image/*">
+        </label>
+        <label class="field">
+          <span>Caption</span>
+          <input type="text" id="galleryCaption" placeholder="e.g. Sunrise at Rohtang Pass">
+        </label>
+        <button type="submit" class="btn btn-primary">Add</button>
+      </form>
+      <div id="galleryAdminGrid" class="gallery-admin-grid"></div>
+    </section>
+
+    <section class="tab-panel hidden" id="tab-account">
+      <h2>Account</h2>
+      <p class="muted">Change the admin password.</p>
+      <form id="passwordForm" class="stack-form">
+        <label class="field"><span>Current password</span><input type="password" id="curPassword" required></label>
+        <label class="field"><span>New password</span><input type="password" id="newPassword" minlength="8" required></label>
+        <button type="submit" class="btn btn-primary">Update password</button>
+      </form>
+    </section>
+  </main>
+</div>
+
+<template id="destinationCardTpl">
+  <div class="admin-card" data-id="">
+    <div class="admin-card-head">
+      <input class="input-inline title-input" data-field="name" placeholder="Destination name">
+      <button class="icon-btn delete-btn" title="Delete">✕</button>
+    </div>
+    <div class="field photo-manager-field">
+      <span>Photos <small class="muted">(first one is the cover shown on the site)</small></span>
+      <div class="photo-row">
+        <div class="photo-grid" data-field="photo_grid"></div>
+        <label class="add-photo-tile">
+          + Add photo
+          <input type="file" accept="image/*" multiple data-field="image_file" hidden>
+        </label>
+      </div>
+    </div>
+    <div class="grid-2">
+      <label class="field"><span>Region</span><input data-field="region"></label>
+      <label class="field"><span>Tagline</span><input data-field="tagline"></label>
+    </div>
+    <label class="field"><span>Description</span><textarea data-field="description" rows="2"></textarea></label>
+    <label class="field"><span>Highlights (comma separated)</span><input data-field="highlights"></label>
+    <button class="btn btn-secondary save-btn">Save</button>
+  </div>
+</template>
+
+<template id="packageCardTpl">
+  <div class="admin-card" data-id="">
+    <div class="admin-card-head">
+      <input class="input-inline title-input" data-field="title" placeholder="Package title">
+      <button class="icon-btn delete-btn" title="Delete">✕</button>
+    </div>
+    <div class="grid-2">
+      <label class="field"><span>Duration</span><input data-field="duration" placeholder="4 Nights / 5 Days"></label>
+      <label class="field"><span>Route</span><input data-field="route" placeholder="Delhi → ... → Delhi"></label>
+      <label class="field"><span>Price (₹)</span><input data-field="price" type="number"></label>
+      <label class="field"><span>Price note</span><input data-field="price_note" placeholder="per person, double sharing"></label>
+    </div>
+    <label class="field"><span>Includes (one per line)</span><textarea data-field="includes" rows="4"></textarea></label>
+    <label class="field"><span>Itinerary — one day per line as: Day 1 | Title | Description</span><textarea data-field="itinerary" rows="4"></textarea></label>
+    <button class="btn btn-secondary save-btn">Save</button>
+  </div>
+</template>
+
+<script src="/admin/js/admin.js"></script>
+</body>
+</html>

@@ -1,0 +1,12 @@
+{
+  "name": "mepia-wander-tales",
+  "version": "1.0.0",
+  "description": "Trip planning website with admin dashboard for Mepiyu Wander Travels",
+  "main": "server/server.js",
+  "scripts": {
+    "start": "node server/server.js"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  }
+}

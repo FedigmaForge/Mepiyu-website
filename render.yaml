@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: mepia-wander-tales
+    runtime: node
+    plan: free
+    region: singapore
+    buildCommand: "echo 'no build step'"
+    startCommand: "node server/server.js"
+    envVars:
+      - key: NODE_VERSION
+        value: 22.11.0
+      - key: ADMIN_ENABLED
+        value: "false"

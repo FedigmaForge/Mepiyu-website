@@ -1,0 +1,292 @@
+const http = require('node:http');
+const fs = require('node:fs');
+const path = require('node:path');
+const crypto = require('node:crypto');
+const { db, hashPassword } = require('./db');
+
+const PORT = process.env.PORT || 3000;
+const PUBLIC_DIR = path.join(__dirname, '..', 'public');
+const ADMIN_DIR = path.join(__dirname, '..', 'admin');
+const UPLOADS_DIR = path.join(PUBLIC_DIR, 'uploads');
+const ADMIN_ENABLED = process.env.ADMIN_ENABLED === 'true';
+if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+
+// ---- very small session store (in-memory) ----
+const sessions = new Map(); // token -> { username, expires }
+const SESSION_TTL_MS = 1000 * 60 * 60 * 8; // 8 hours
+
+function createSession(username) {
+  const token = crypto.randomBytes(32).toString('hex');
+  sessions.set(token, { username, expires: Date.now() + SESSION_TTL_MS });
+  return token;
+}
+function getSession(token) {
+  if (!token) return null;
+  const s = sessions.get(token);
+  if (!s) return null;
+  if (Date.now() > s.expires) { sessions.delete(token); return null; }
+  return s;
+}
+function parseCookies(req) {
+  const header = req.headers.cookie;
+  const out = {};
+  if (!header) return out;
+  header.split(';').forEach(pair => {
+    const idx = pair.indexOf('=');
+    if (idx === -1) return;
+    out[pair.slice(0, idx).trim()] = decodeURIComponent(pair.slice(idx + 1).trim());
+  });
+  return out;
+}
+function requireAuth(req) {
+  const cookies = parseCookies(req);
+  return getSession(cookies.mepia_session);
+}
+
+// ---- helpers ----
+function sendJSON(res, status, data) {
+  const body = JSON.stringify(data);
+  res.writeHead(status, {
+    'Content-Type': 'application/json; charset=utf-8',
+    'Content-Length': Buffer.byteLength(body)
+  });
+  res.end(body);
+}
+function readBody(req) {
+  return new Promise((resolve, reject) => {
+    let chunks = [];
+    let size = 0;
+    req.on('data', c => {
+      size += c.length;
+      if (size > 15 * 1024 * 1024) { reject(new Error('Payload too large')); req.destroy(); return; }
+      chunks.push(c);
+    });
+    req.on('end', () => {
+      const raw = Buffer.concat(chunks).toString('utf8');
+      if (!raw) return resolve({});
+      try { resolve(JSON.parse(raw)); } catch (e) { reject(e); }
+    });
+    req.on('error', reject);
+  });
+}
+
+const MIME = {
+  '.html': 'text/html; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.js': 'application/javascript; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.svg': 'image/svg+xml',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
+  '.ico': 'image/x-icon'
+};
+
+function serveStatic(res, rootDir, urlPath) {
+  let filePath = path.join(rootDir, decodeURIComponent(urlPath));
+  if (!filePath.startsWith(rootDir)) { res.writeHead(403); res.end('Forbidden'); return; }
+  if (urlPath.endsWith('/') || urlPath === '') filePath = path.join(filePath, 'index.html');
+  fs.stat(filePath, (err, stat) => {
+    if (err || !stat.isFile()) {
+      // SPA-ish fallback to index.html for admin app routes
+      if (rootDir === ADMIN_DIR) {
+        const fallback = path.join(ADMIN_DIR, 'index.html');
+        fs.readFile(fallback, (e2, data) => {
+          if (e2) { res.writeHead(404); res.end('Not found'); return; }
+          res.writeHead(200, { 'Content-Type': MIME['.html'] });
+          res.end(data);
+        });
+        return;
+      }
+      res.writeHead(404); res.end('Not found'); return;
+    }
+    const ext = path.extname(filePath).toLowerCase();
+    res.writeHead(200, { 'Content-Type': MIME[ext] || 'application/octet-stream' });
+    fs.createReadStream(filePath).pipe(res);
+  });
+}
+
+// ---- data access helpers ----
+function allSettings() {
+  const rows = db.prepare('SELECT key, value FROM settings').all();
+  const obj = {};
+  rows.forEach(r => obj[r.key] = r.value);
+  return obj;
+}
+function parseJSONSafe(str, fallback) {
+  try { return JSON.parse(str); } catch (e) { return fallback; }
+}
+function destinationOut(row) {
+  return { ...row, highlights: parseJSONSafe(row.highlights, []), images: parseJSONSafe(row.images, []) };
+}
+function packageOut(row) {
+  return { ...row, includes: parseJSONSafe(row.includes, []), itinerary: parseJSONSafe(row.itinerary, []) };
+}
+
+const server = http.createServer(async (req, res) => {
+  const url = new URL(req.url, `http://${req.headers.host}`);
+  const p = url.pathname;
+
+  // Admin dashboard + admin/auth API are disabled unless ADMIN_ENABLED=true
+  if (!ADMIN_ENABLED && (
+    p === '/admin' || p.startsWith('/admin/') ||
+    p.startsWith('/api/admin/') ||
+    p === '/api/login' || p === '/api/logout' || p === '/api/me' || p === '/api/change-password'
+  )) {
+    res.writeHead(404); res.end('Not found'); return;
+  }
+
+  try {
+    // ---------- PUBLIC READ API ----------
+    if (p === '/api/site' && req.method === 'GET') {
+      const settings = allSettings();
+      const destinations = db.prepare('SELECT * FROM destinations ORDER BY sort_order ASC, id ASC').all().map(destinationOut);
+      const packages = db.prepare('SELECT * FROM packages ORDER BY sort_order ASC, id ASC').all().map(packageOut);
+      const gallery = db.prepare('SELECT * FROM gallery ORDER BY sort_order ASC, id ASC').all();
+      return sendJSON(res, 200, { settings, destinations, packages, gallery });
+    }
+
+    // ---------- AUTH ----------
+    if (p === '/api/login' && req.method === 'POST') {
+      const body = await readBody(req);
+      const { username, password } = body;
+      const user = db.prepare('SELECT * FROM admin_users WHERE username = ?').get(username || '');
+      if (!user) return sendJSON(res, 401, { error: 'Invalid username or password' });
+      const hash = hashPassword(password || '', user.salt);
+      if (hash !== user.hash) return sendJSON(res, 401, { error: 'Invalid username or password' });
+      const token = createSession(user.username);
+      res.setHeader('Set-Cookie', `mepia_session=${token}; HttpOnly; Path=/; Max-Age=${SESSION_TTL_MS / 1000}; SameSite=Strict`);
+      return sendJSON(res, 200, { ok: true, username: user.username });
+    }
+    if (p === '/api/logout' && req.method === 'POST') {
+      const cookies = parseCookies(req);
+      if (cookies.mepia_session) sessions.delete(cookies.mepia_session);
+      res.setHeader('Set-Cookie', 'mepia_session=; HttpOnly; Path=/; Max-Age=0');
+      return sendJSON(res, 200, { ok: true });
+    }
+    if (p === '/api/me' && req.method === 'GET') {
+      const session = requireAuth(req);
+      if (!session) return sendJSON(res, 401, { error: 'Not logged in' });
+      return sendJSON(res, 200, { username: session.username });
+    }
+    if (p === '/api/change-password' && req.method === 'POST') {
+      const session = requireAuth(req);
+      if (!session) return sendJSON(res, 401, { error: 'Not logged in' });
+      const { currentPassword, newPassword } = await readBody(req);
+      const user = db.prepare('SELECT * FROM admin_users WHERE username = ?').get(session.username);
+      if (hashPassword(currentPassword || '', user.salt) !== user.hash) {
+        return sendJSON(res, 400, { error: 'Current password is incorrect' });
+      }
+      if (!newPassword || newPassword.length < 8) {
+        return sendJSON(res, 400, { error: 'New password must be at least 8 characters' });
+      }
+      const salt = crypto.randomBytes(16).toString('hex');
+      const hash = hashPassword(newPassword, salt);
+      db.prepare('UPDATE admin_users SET salt = ?, hash = ? WHERE username = ?').run(salt, hash, session.username);
+      return sendJSON(res, 200, { ok: true });
+    }
+
+    // ---------- everything below requires auth ----------
+    if (p.startsWith('/api/admin/')) {
+      const session = requireAuth(req);
+      if (!session) return sendJSON(res, 401, { error: 'Not logged in' });
+
+      // settings
+      if (p === '/api/admin/settings' && req.method === 'PUT') {
+        const body = await readBody(req);
+        const stmt = db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value');
+        for (const [k, v] of Object.entries(body)) stmt.run(k, String(v));
+        return sendJSON(res, 200, { ok: true, settings: allSettings() });
+      }
+
+      // destinations
+      let m = p.match(/^\/api\/admin\/destinations(?:\/(\d+))?$/);
+      if (m) {
+        const id = m[1];
+        if (req.method === 'POST') {
+          const b = await readBody(req);
+          const info = db.prepare('INSERT INTO destinations (name, region, tagline, description, image_url, highlights, sort_order, images) VALUES (?,?,?,?,?,?,?,?)')
+            .run(b.name || '', b.region || '', b.tagline || '', b.description || '', b.image_url || '', JSON.stringify(b.highlights || []), b.sort_order || 0, JSON.stringify(b.images || []));
+          return sendJSON(res, 201, destinationOut(db.prepare('SELECT * FROM destinations WHERE id = ?').get(info.lastInsertRowid)));
+        }
+        if (req.method === 'PUT' && id) {
+          const b = await readBody(req);
+          db.prepare('UPDATE destinations SET name=?, region=?, tagline=?, description=?, image_url=?, highlights=?, sort_order=?, images=? WHERE id=?')
+            .run(b.name || '', b.region || '', b.tagline || '', b.description || '', b.image_url || '', JSON.stringify(b.highlights || []), b.sort_order || 0, JSON.stringify(b.images || []), id);
+          return sendJSON(res, 200, destinationOut(db.prepare('SELECT * FROM destinations WHERE id = ?').get(id)));
+        }
+        if (req.method === 'DELETE' && id) {
+          db.prepare('DELETE FROM destinations WHERE id = ?').run(id);
+          return sendJSON(res, 200, { ok: true });
+        }
+      }
+
+      // packages
+      m = p.match(/^\/api\/admin\/packages(?:\/(\d+))?$/);
+      if (m) {
+        const id = m[1];
+        if (req.method === 'POST') {
+          const b = await readBody(req);
+          const info = db.prepare('INSERT INTO packages (title, duration, route, price, price_note, includes, itinerary, image_url, featured, sort_order) VALUES (?,?,?,?,?,?,?,?,?,?)')
+            .run(b.title || '', b.duration || '', b.route || '', b.price || 0, b.price_note || '', JSON.stringify(b.includes || []), JSON.stringify(b.itinerary || []), b.image_url || '', b.featured ? 1 : 0, b.sort_order || 0);
+          return sendJSON(res, 201, packageOut(db.prepare('SELECT * FROM packages WHERE id = ?').get(info.lastInsertRowid)));
+        }
+        if (req.method === 'PUT' && id) {
+          const b = await readBody(req);
+          db.prepare('UPDATE packages SET title=?, duration=?, route=?, price=?, price_note=?, includes=?, itinerary=?, image_url=?, featured=?, sort_order=? WHERE id=?')
+            .run(b.title || '', b.duration || '', b.route || '', b.price || 0, b.price_note || '', JSON.stringify(b.includes || []), JSON.stringify(b.itinerary || []), b.image_url || '', b.featured ? 1 : 0, b.sort_order || 0, id);
+          return sendJSON(res, 200, packageOut(db.prepare('SELECT * FROM packages WHERE id = ?').get(id)));
+        }
+        if (req.method === 'DELETE' && id) {
+          db.prepare('DELETE FROM packages WHERE id = ?').run(id);
+          return sendJSON(res, 200, { ok: true });
+        }
+      }
+
+      // gallery
+      m = p.match(/^\/api\/admin\/gallery(?:\/(\d+))?$/);
+      if (m) {
+        const id = m[1];
+        if (req.method === 'POST') {
+          const b = await readBody(req);
+          const info = db.prepare('INSERT INTO gallery (image_url, caption, location, sort_order) VALUES (?,?,?,?)')
+            .run(b.image_url || '', b.caption || '', b.location || '', b.sort_order || 0);
+          return sendJSON(res, 201, db.prepare('SELECT * FROM gallery WHERE id = ?').get(info.lastInsertRowid));
+        }
+        if (req.method === 'DELETE' && id) {
+          db.prepare('DELETE FROM gallery WHERE id = ?').run(id);
+          return sendJSON(res, 200, { ok: true });
+        }
+      }
+
+      // image upload (base64 data URL from admin UI)
+      if (p === '/api/admin/upload' && req.method === 'POST') {
+        const b = await readBody(req);
+        const match = /^data:(image\/(png|jpeg|jpg|webp));base64,(.+)$/.exec(b.dataUrl || '');
+        if (!match) return sendJSON(res, 400, { error: 'Invalid image data' });
+        const ext = match[2] === 'jpeg' ? 'jpg' : match[2];
+        const filename = `${Date.now()}-${crypto.randomBytes(4).toString('hex')}.${ext}`;
+        fs.writeFileSync(path.join(UPLOADS_DIR, filename), Buffer.from(match[3], 'base64'));
+        return sendJSON(res, 201, { url: `/uploads/${filename}` });
+      }
+
+      return sendJSON(res, 404, { error: 'Not found' });
+    }
+
+    // ---------- static files ----------
+    if (p === '/admin' || p.startsWith('/admin/')) {
+      const sub = p.replace(/^\/admin/, '') || '/';
+      return serveStatic(res, ADMIN_DIR, sub);
+    }
+    return serveStatic(res, PUBLIC_DIR, p);
+  } catch (err) {
+    console.error(err);
+    sendJSON(res, 500, { error: 'Server error' });
+  }
+});
+
+server.listen(PORT, () => {
+  console.log(`Mepiyu Wander Travels server running at http://localhost:${PORT}`);
+  console.log(`Admin panel at http://localhost:${PORT}/admin`);
+});
