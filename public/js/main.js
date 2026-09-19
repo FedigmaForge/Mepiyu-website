@@ -9,6 +9,29 @@
   });
   siteNav.querySelectorAll('a').forEach(a => a.addEventListener('click', () => siteNav.classList.remove('open')));
 
+  const siteHeader = document.querySelector('.site-header');
+  const onScroll = () => siteHeader.classList.toggle('is-scrolled', window.scrollY > 8);
+  onScroll();
+  window.addEventListener('scroll', onScroll, { passive: true });
+
+  const setHeaderHeight = () => {
+    document.documentElement.style.setProperty('--header-h', `${siteHeader.offsetHeight}px`);
+  };
+  setHeaderHeight();
+  window.addEventListener('resize', setHeaderHeight);
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(setHeaderHeight);
+
+  const navLinks = [...siteNav.querySelectorAll('a')];
+  const navSections = navLinks.map(a => document.querySelector(a.getAttribute('href'))).filter(Boolean);
+  if (navSections.length) {
+    const setActive = id => navLinks.forEach(a => a.classList.toggle('active', a.getAttribute('href') === `#${id}`));
+    const observer = new IntersectionObserver(entries => {
+      const visible = entries.filter(e => e.isIntersecting);
+      if (visible.length) setActive(visible[0].target.id);
+    }, { rootMargin: '-45% 0px -50% 0px' });
+    navSections.forEach(s => observer.observe(s));
+  }
+
   function waLink(number, text) {
     return `https://wa.me/${number}?text=${encodeURIComponent(text)}`;
   }
@@ -53,6 +76,16 @@
     document.getElementById('contactPhone').textContent = settings.contact_phone || '—';
     document.getElementById('contactEmail').textContent = settings.contact_email || '—';
     document.getElementById('contactAddress').textContent = settings.contact_address || '—';
+    if (settings.map_url) {
+      const mapBtn = document.getElementById('contactMapBtn');
+      const mapWrap = document.getElementById('contactMapWrap');
+      const mapFrame = document.getElementById('contactMapFrame');
+      const addressRow = document.getElementById('contactAddressRow');
+      mapBtn.href = settings.map_url;
+      addressRow.href = settings.map_url;
+      mapFrame.src = settings.map_url + (settings.map_url.includes('?') ? '&' : '?') + 'output=embed';
+      mapWrap.hidden = false;
+    }
 
     // Destinations
     const destGrid = document.getElementById('destGrid');
@@ -64,7 +97,7 @@
         ? `<img src="${escapeHtml(d.image_url)}" alt="${escapeHtml(d.name)}" loading="lazy">`
         : destPlaceholder();
       return `
-      <article class="dest-card" data-dest="${escapeHtml(d.name)}">
+      <article class="dest-card reveal" data-dest="${escapeHtml(d.name)}">
         <div class="dest-media">${media}</div>
         <div class="dest-card-body">
           <span class="dest-region">${escapeHtml(d.region || '')}</span>
@@ -96,7 +129,7 @@
       `).join('');
       const waText = `Hi ${settings.site_name}! I'm interested in the "${p.title}" package (${p.duration}). Please share availability.`;
       return `
-        <article class="pkg-card" data-idx="${i}">
+        <article class="pkg-card reveal" data-idx="${i}">
           <div>
             <p class="pkg-route">${escapeHtml(p.route || '')}</p>
             <h3>${escapeHtml(p.title)}</h3>
@@ -170,7 +203,7 @@
     const galleryGrid = document.getElementById('galleryGrid');
     if (gallery.length) {
       galleryGrid.innerHTML = gallery.map(g => `
-        <div class="gallery-item">
+        <div class="gallery-item reveal">
           <img src="${escapeHtml(g.image_url)}" alt="${escapeHtml(g.caption || g.location || '')}" loading="lazy">
           ${g.caption ? `<span class="gallery-caption">${escapeHtml(g.caption)}</span>` : ''}
         </div>
@@ -192,9 +225,28 @@
       if (notes) text += ` Notes: ${notes}.`;
       window.open(waLink(waNumber, text), '_blank', 'noopener');
     });
+    initReveal();
   }).catch(err => {
     console.error('Failed to load site data', err);
   });
+
+  function initReveal() {
+    const targets = document.querySelectorAll('.reveal');
+    if (!targets.length) return;
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      targets.forEach(el => el.classList.add('in-view'));
+      return;
+    }
+    const observer = new IntersectionObserver((entries, obs) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('in-view');
+          obs.unobserve(entry.target);
+        }
+      });
+    }, { threshold: 0.15, rootMargin: '0px 0px -60px 0px' });
+    targets.forEach(el => observer.observe(el));
+  }
 
   function escapeHtml(str) {
     return String(str ?? '').replace(/[&<>"']/g, s => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[s]));

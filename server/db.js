@@ -71,6 +71,8 @@ function seed() {
       contact_phone: '+91 99999 99999',
       contact_email: 'hello@mepiawandertales.com',
       contact_address: 'New Delhi, India',
+      map_url: 'https://www.google.com/maps?q=32.2215492,77.1968003&z=17&hl=en',
+      site_url: 'https://mepia-wander-tales.onrender.com',
       hero_heading: 'Plan your next Himalayan escape',
       hero_subheading: 'Handpicked mountain getaways across Himachal and Uttarakhand — tell us your dates, we\u2019ll build the trip.',
       about_text: 'Mepiyu Wander Travels designs small-group and custom Himalayan trips \u2014 from riverside homestays in Jibhi to snow passes above Manali. We handle the stays, the transfers and the sightseeing, so all you have to do is show up.'

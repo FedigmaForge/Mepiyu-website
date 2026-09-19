@@ -3,6 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const { db, hashPassword } = require('./db');
+const { renderIndex } = require('./render');
 
 const PORT = process.env.PORT || 3000;
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
@@ -123,6 +124,13 @@ function destinationOut(row) {
 function packageOut(row) {
   return { ...row, includes: parseJSONSafe(row.includes, []), itinerary: parseJSONSafe(row.itinerary, []) };
 }
+function getSiteData() {
+  const settings = allSettings();
+  const destinations = db.prepare('SELECT * FROM destinations ORDER BY sort_order ASC, id ASC').all().map(destinationOut);
+  const packages = db.prepare('SELECT * FROM packages ORDER BY sort_order ASC, id ASC').all().map(packageOut);
+  const gallery = db.prepare('SELECT * FROM gallery ORDER BY sort_order ASC, id ASC').all();
+  return { settings, destinations, packages, gallery };
+}
 
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
@@ -140,11 +148,27 @@ const server = http.createServer(async (req, res) => {
   try {
     // ---------- PUBLIC READ API ----------
     if (p === '/api/site' && req.method === 'GET') {
-      const settings = allSettings();
-      const destinations = db.prepare('SELECT * FROM destinations ORDER BY sort_order ASC, id ASC').all().map(destinationOut);
-      const packages = db.prepare('SELECT * FROM packages ORDER BY sort_order ASC, id ASC').all().map(packageOut);
-      const gallery = db.prepare('SELECT * FROM gallery ORDER BY sort_order ASC, id ASC').all();
-      return sendJSON(res, 200, { settings, destinations, packages, gallery });
+      return sendJSON(res, 200, getSiteData());
+    }
+
+    // ---------- SEO: server-rendered homepage, robots.txt, sitemap.xml ----------
+    if ((p === '/' || p === '/index.html') && req.method === 'GET') {
+      const html = renderIndex(getSiteData());
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      return res.end(html);
+    }
+    if (p === '/robots.txt' && req.method === 'GET') {
+      const siteUrl = (allSettings().site_url || '').replace(/\/$/, '');
+      const body = `User-agent: *\nAllow: /\nDisallow: /admin\nDisallow: /api/\n${siteUrl ? `\nSitemap: ${siteUrl}/sitemap.xml\n` : ''}`;
+      res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
+      return res.end(body);
+    }
+    if (p === '/sitemap.xml' && req.method === 'GET') {
+      const siteUrl = (allSettings().site_url || '').replace(/\/$/, '');
+      const today = new Date().toISOString().slice(0, 10);
+      const body = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n  <url><loc>${siteUrl}/</loc><lastmod>${today}</lastmod><changefreq>weekly</changefreq><priority>1.0</priority></url>\n</urlset>`;
+      res.writeHead(200, { 'Content-Type': 'application/xml; charset=utf-8' });
+      return res.end(body);
     }
 
     // ---------- AUTH ----------

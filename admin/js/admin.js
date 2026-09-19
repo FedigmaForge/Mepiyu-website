@@ -83,6 +83,8 @@
     ['contact_phone', 'Display phone number', 'text'],
     ['contact_email', 'Contact email', 'text'],
     ['contact_address', 'Address / based in', 'text'],
+    ['map_url', 'Google Maps link', 'text'],
+    ['site_url', 'Website URL (for SEO — no trailing slash, e.g. https://yourdomain.com)', 'text'],
     ['hero_heading', 'Hero heading', 'text'],
     ['hero_subheading', 'Hero subheading', 'textarea'],
     ['about_text', 'About paragraph', 'textarea']
