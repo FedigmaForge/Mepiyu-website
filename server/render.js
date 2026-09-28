@@ -9,8 +9,18 @@ function escapeHtml(str) {
 }
 function escapeAttr(str) { return escapeHtml(str); }
 
+// wa.me needs the full international number (digits only). A bare 10-digit
+// Indian mobile number is assumed to be +91.
+function normalizeWaNumber(number) {
+  const digits = String(number || '').replace(/\D/g, '').replace(/^0+/, '');
+  return digits.length === 10 ? `91${digits}` : digits;
+}
 function waLink(number, text) {
-  return `https://wa.me/${number}?text=${encodeURIComponent(text)}`;
+  return `https://wa.me/${normalizeWaNumber(number)}?text=${encodeURIComponent(text)}`;
+}
+// Stop admin-entered text from closing the <script> tag in JSON-LD
+function safeJson(obj) {
+  return JSON.stringify(obj).replace(/</g, '\\u003c');
 }
 
 function destTokens(name) {
@@ -132,7 +142,7 @@ function buildJsonLd(settings, destinations, packages, siteUrl, description) {
       }
     }))
   };
-  return `<script type="application/ld+json">${JSON.stringify(org)}</script>\n<script type="application/ld+json">${JSON.stringify(destinationList)}</script>`;
+  return `<script type="application/ld+json">${safeJson(org)}</script>\n<script type="application/ld+json">${safeJson(destinationList)}</script>`;
 }
 
 function truncateAtWord(str, maxLen) {
@@ -150,7 +160,7 @@ function buildDescription(settings, destinations) {
 }
 
 function renderIndex({ settings, destinations, packages, gallery }) {
-  const siteUrl = (settings.site_url || '').replace(/\/$/, '') || 'https://mepia-wander-tales.onrender.com';
+  const siteUrl = (process.env.SITE_URL || settings.site_url || '').replace(/\/$/, '') || 'https://mepia-wander-tales.onrender.com';
   const waNumber = settings.whatsapp_number || '';
   const genericWaText = `Hi ${settings.site_name}! I'd like help planning a Himalayan trip.`;
   const title = `${settings.site_name} | Himalayan Trip Planning — Manali, Shimla, Kasol & More`;

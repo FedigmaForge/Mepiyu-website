@@ -1,4 +1,34 @@
+# dependencies
 node_modules/
+
+# environment / secrets - never commit
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# SQLite runtime files (the main mepia.db is committed as seed content)
+server/*.db-journal
+server/*.db-wal
+server/*.db-shm
+data/
+
+# logs
+logs/
+*.log
+npm-debug.log*
+
+# OS / editor
 .DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# local AWS / Elastic Beanstalk files
+.elasticbeanstalk/*
+!.elasticbeanstalk/*.cfg.yml
+!.elasticbeanstalk/*.global.yml
+.aws-sam/
 
 Claude outputs/

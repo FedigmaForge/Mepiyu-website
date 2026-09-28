@@ -2,15 +2,25 @@ const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
-const { db, hashPassword } = require('./db');
+const { db, hashPassword, isUsingDefaultPassword } = require('./db');
 const { renderIndex } = require('./render');
 
 const PORT = process.env.PORT || 3000;
+const HOST = process.env.HOST || '0.0.0.0';
+const IS_PROD = process.env.NODE_ENV === 'production';
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
 const ADMIN_DIR = path.join(__dirname, '..', 'admin');
-const UPLOADS_DIR = path.join(PUBLIC_DIR, 'uploads');
-const ADMIN_ENABLED = process.env.ADMIN_ENABLED === 'true';
+const BUNDLED_UPLOADS_DIR = path.join(PUBLIC_DIR, 'uploads');
+// UPLOADS_DIR lets uploaded photos live outside the code folder (persistent disk)
+const UPLOADS_DIR = process.env.UPLOADS_DIR ? path.resolve(process.env.UPLOADS_DIR) : BUNDLED_UPLOADS_DIR;
 if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+
+let ADMIN_ENABLED = process.env.ADMIN_ENABLED === 'true';
+if (ADMIN_ENABLED && IS_PROD && isUsingDefaultPassword()) {
+  ADMIN_ENABLED = false;
+  console.warn('WARNING: admin panel DISABLED - the admin account still uses the default password. ' +
+    'Set ADMIN_PASSWORD in the server environment and restart.');
+}
 
 // ---- very small session store (in-memory) ----
 const sessions = new Map(); // token -> { username, expires }
@@ -39,6 +49,43 @@ function parseCookies(req) {
   });
   return out;
 }
+// ---- login rate limiting (per IP, in-memory) ----
+const loginAttempts = new Map(); // ip -> { count, resetAt }
+const MAX_LOGIN_ATTEMPTS = 10;
+const LOGIN_WINDOW_MS = 15 * 60 * 1000;
+function clientIp(req) {
+  return (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.socket.remoteAddress || '';
+}
+function loginBlocked(ip) {
+  const a = loginAttempts.get(ip);
+  if (!a) return false;
+  if (Date.now() > a.resetAt) { loginAttempts.delete(ip); return false; }
+  return a.count >= MAX_LOGIN_ATTEMPTS;
+}
+function recordFailedLogin(ip) {
+  const a = loginAttempts.get(ip);
+  if (!a || Date.now() > a.resetAt) loginAttempts.set(ip, { count: 1, resetAt: Date.now() + LOGIN_WINDOW_MS });
+  else a.count++;
+}
+// periodically clear expired sessions / attempts so memory doesn't grow
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, s] of sessions) if (now > s.expires) sessions.delete(k);
+  for (const [k, a] of loginAttempts) if (now > a.resetAt) loginAttempts.delete(k);
+}, 10 * 60 * 1000).unref();
+
+function safeEqualHex(a, b) {
+  const ba = Buffer.from(String(a), 'hex');
+  const bb = Buffer.from(String(b), 'hex');
+  return ba.length === bb.length && ba.length > 0 && crypto.timingSafeEqual(ba, bb);
+}
+function isHttps(req) {
+  return req.socket.encrypted || (req.headers['x-forwarded-proto'] || '').split(',')[0].trim() === 'https';
+}
+function sessionCookie(req, value, maxAgeSec) {
+  return `mepia_session=${value}; HttpOnly; Path=/; Max-Age=${maxAgeSec}; SameSite=Strict${isHttps(req) ? '; Secure' : ''}`;
+}
+
 function requireAuth(req) {
   const cookies = parseCookies(req);
   return getSession(cookies.mepia_session);
@@ -85,8 +132,10 @@ const MIME = {
 };
 
 function serveStatic(res, rootDir, urlPath) {
-  let filePath = path.join(rootDir, decodeURIComponent(urlPath));
-  if (!filePath.startsWith(rootDir)) { res.writeHead(403); res.end('Forbidden'); return; }
+  let decoded;
+  try { decoded = decodeURIComponent(urlPath); } catch (e) { res.writeHead(400); res.end('Bad request'); return; }
+  let filePath = path.join(rootDir, decoded);
+  if (filePath !== rootDir && !filePath.startsWith(rootDir + path.sep)) { res.writeHead(403); res.end('Forbidden'); return; }
   if (urlPath.endsWith('/') || urlPath === '') filePath = path.join(filePath, 'index.html');
   fs.stat(filePath, (err, stat) => {
     if (err || !stat.isFile()) {
@@ -103,8 +152,14 @@ function serveStatic(res, rootDir, urlPath) {
       res.writeHead(404); res.end('Not found'); return;
     }
     const ext = path.extname(filePath).toLowerCase();
-    res.writeHead(200, { 'Content-Type': MIME[ext] || 'application/octet-stream' });
-    fs.createReadStream(filePath).pipe(res);
+    const headers = { 'Content-Type': MIME[ext] || 'application/octet-stream', 'Content-Length': stat.size };
+    // images can be cached long (upload names are unique); css/js/html revalidate
+    headers['Cache-Control'] = ['.jpg', '.jpeg', '.png', '.webp', '.svg', '.ico'].includes(ext)
+      ? 'public, max-age=604800' : 'no-cache';
+    res.writeHead(200, headers);
+    const stream = fs.createReadStream(filePath);
+    stream.on('error', () => res.destroy());
+    stream.pipe(res);
   });
 }
 
@@ -133,8 +188,21 @@ function getSiteData() {
 }
 
 const server = http.createServer(async (req, res) => {
-  const url = new URL(req.url, `http://${req.headers.host}`);
-  const p = url.pathname;
+  let p;
+  try { p = new URL(req.url, 'http://localhost').pathname; }
+  catch (e) { res.writeHead(400); res.end('Bad request'); return; }
+
+  // basic security headers on every response
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  if (isHttps(req)) res.setHeader('Strict-Transport-Security', 'max-age=15552000');
+
+  // health check for AWS load balancer / Elastic Beanstalk / ECS
+  if (p === '/health' || p === '/healthz') {
+    res.writeHead(200, { 'Content-Type': 'text/plain' });
+    return res.end('ok');
+  }
 
   // Admin dashboard + admin/auth API are disabled unless ADMIN_ENABLED=true
   if (!ADMIN_ENABLED && (
@@ -158,13 +226,13 @@ const server = http.createServer(async (req, res) => {
       return res.end(html);
     }
     if (p === '/robots.txt' && req.method === 'GET') {
-      const siteUrl = (allSettings().site_url || '').replace(/\/$/, '');
+      const siteUrl = (process.env.SITE_URL || allSettings().site_url || '').replace(/\/$/, '');
       const body = `User-agent: *\nAllow: /\nDisallow: /admin\nDisallow: /api/\n${siteUrl ? `\nSitemap: ${siteUrl}/sitemap.xml\n` : ''}`;
       res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
       return res.end(body);
     }
     if (p === '/sitemap.xml' && req.method === 'GET') {
-      const siteUrl = (allSettings().site_url || '').replace(/\/$/, '');
+      const siteUrl = (process.env.SITE_URL || allSettings().site_url || '').replace(/\/$/, '');
       const today = new Date().toISOString().slice(0, 10);
       const body = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n  <url><loc>${siteUrl}/</loc><lastmod>${today}</lastmod><changefreq>weekly</changefreq><priority>1.0</priority></url>\n</urlset>`;
       res.writeHead(200, { 'Content-Type': 'application/xml; charset=utf-8' });
@@ -173,20 +241,24 @@ const server = http.createServer(async (req, res) => {
 
     // ---------- AUTH ----------
     if (p === '/api/login' && req.method === 'POST') {
+      const ip = clientIp(req);
+      if (loginBlocked(ip)) return sendJSON(res, 429, { error: 'Too many login attempts. Try again in 15 minutes.' });
       const body = await readBody(req);
       const { username, password } = body;
-      const user = db.prepare('SELECT * FROM admin_users WHERE username = ?').get(username || '');
-      if (!user) return sendJSON(res, 401, { error: 'Invalid username or password' });
-      const hash = hashPassword(password || '', user.salt);
-      if (hash !== user.hash) return sendJSON(res, 401, { error: 'Invalid username or password' });
+      const user = db.prepare('SELECT * FROM admin_users WHERE username = ?').get(String(username || ''));
+      if (!user || !safeEqualHex(hashPassword(String(password || ''), user.salt), user.hash)) {
+        recordFailedLogin(ip);
+        return sendJSON(res, 401, { error: 'Invalid username or password' });
+      }
+      loginAttempts.delete(ip);
       const token = createSession(user.username);
-      res.setHeader('Set-Cookie', `mepia_session=${token}; HttpOnly; Path=/; Max-Age=${SESSION_TTL_MS / 1000}; SameSite=Strict`);
+      res.setHeader('Set-Cookie', sessionCookie(req, token, SESSION_TTL_MS / 1000));
       return sendJSON(res, 200, { ok: true, username: user.username });
     }
     if (p === '/api/logout' && req.method === 'POST') {
       const cookies = parseCookies(req);
       if (cookies.mepia_session) sessions.delete(cookies.mepia_session);
-      res.setHeader('Set-Cookie', 'mepia_session=; HttpOnly; Path=/; Max-Age=0');
+      res.setHeader('Set-Cookie', sessionCookie(req, '', 0));
       return sendJSON(res, 200, { ok: true });
     }
     if (p === '/api/me' && req.method === 'GET') {
@@ -199,10 +271,10 @@ const server = http.createServer(async (req, res) => {
       if (!session) return sendJSON(res, 401, { error: 'Not logged in' });
       const { currentPassword, newPassword } = await readBody(req);
       const user = db.prepare('SELECT * FROM admin_users WHERE username = ?').get(session.username);
-      if (hashPassword(currentPassword || '', user.salt) !== user.hash) {
+      if (!user || !safeEqualHex(hashPassword(String(currentPassword || ''), user.salt), user.hash)) {
         return sendJSON(res, 400, { error: 'Current password is incorrect' });
       }
-      if (!newPassword || newPassword.length < 8) {
+      if (typeof newPassword !== 'string' || newPassword.length < 8) {
         return sendJSON(res, 400, { error: 'New password must be at least 8 characters' });
       }
       const salt = crypto.randomBytes(16).toString('hex');
@@ -219,6 +291,7 @@ const server = http.createServer(async (req, res) => {
       // settings
       if (p === '/api/admin/settings' && req.method === 'PUT') {
         const body = await readBody(req);
+        if (!body || typeof body !== 'object' || Array.isArray(body)) return sendJSON(res, 400, { error: 'Invalid settings' });
         const stmt = db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value');
         for (const [k, v] of Object.entries(body)) stmt.run(k, String(v));
         return sendJSON(res, 200, { ok: true, settings: allSettings() });
@@ -299,18 +372,38 @@ const server = http.createServer(async (req, res) => {
     }
 
     // ---------- static files ----------
+    if (p.startsWith('/uploads/') && UPLOADS_DIR !== BUNDLED_UPLOADS_DIR) {
+      // serve from the persistent uploads dir first, fall back to photos bundled in the repo
+      const rel = p.replace(/^\/uploads/, '');
+      const candidate = path.join(UPLOADS_DIR, rel);
+      if (candidate.startsWith(UPLOADS_DIR + path.sep) && fs.existsSync(candidate)) return serveStatic(res, UPLOADS_DIR, rel);
+    }
     if (p === '/admin' || p.startsWith('/admin/')) {
       const sub = p.replace(/^\/admin/, '') || '/';
       return serveStatic(res, ADMIN_DIR, sub);
     }
     return serveStatic(res, PUBLIC_DIR, p);
   } catch (err) {
+    if (err instanceof SyntaxError) return sendJSON(res, 400, { error: 'Invalid JSON' });
+    if (err && err.message === 'Payload too large') return; // connection already destroyed
     console.error(err);
-    sendJSON(res, 500, { error: 'Server error' });
+    if (!res.headersSent) sendJSON(res, 500, { error: 'Server error' });
   }
 });
 
-server.listen(PORT, () => {
-  console.log(`Mepiyu Wander Travels server running at http://localhost:${PORT}`);
-  console.log(`Admin panel at http://localhost:${PORT}/admin`);
+server.listen(PORT, HOST, () => {
+  console.log(`Mepiyu Wander Travels server running on ${HOST}:${PORT}`);
+  console.log(ADMIN_ENABLED ? `Admin panel at /admin` : 'Admin panel disabled (set ADMIN_ENABLED=true to enable)');
 });
+
+// graceful shutdown (AWS sends SIGTERM on deploy / scale-in)
+function shutdown(signal) {
+  console.log(`${signal} received, shutting down...`);
+  server.close(() => {
+    try { db.close(); } catch (e) { /* ignore */ }
+    process.exit(0);
+  });
+  setTimeout(() => process.exit(0), 10000).unref();
+}
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));

@@ -56,6 +56,38 @@ under `server/mepia.db` and `public/uploads/`).
 If you'd rather not manage a server at all, the alternative is a git-based CMS
 approach on a free static host — let me know and I can switch the setup over.
 
+## Environment variables / secrets
+
+Secrets are **never** committed. Copy `.env.example` to `.env` on the server
+(it is git-ignored) or set the same keys in your AWS console. `npm start`
+loads `.env` automatically.
+
+| Variable | Purpose |
+|---|---|
+| `NODE_ENV` | `production` on AWS |
+| `PORT` / `HOST` | Listen port/host (default `3000` / `0.0.0.0`) |
+| `SITE_URL` | Public URL, e.g. `https://www.example.com` (canonical, sitemap, OG tags) |
+| `ADMIN_ENABLED` | `true` to turn on `/admin` |
+| `ADMIN_PASSWORD` | Sets/rotates the `admin` password on startup |
+| `DB_PATH` / `UPLOADS_DIR` | Optional persistent locations for the database and uploaded photos |
+
+In production the admin panel refuses to start while the account still uses
+the default password — set `ADMIN_PASSWORD`.
+
+## Deploying on AWS
+
+Works on EC2, Lightsail, Elastic Beanstalk (Node.js 22 platform) or App Runner.
+Requires **Node.js 22.13+**. Start command: `npm start`. Health check path: `/healthz`.
+
+- Put it behind HTTPS (ALB / CloudFront / Nginx + Let's Encrypt). Session
+  cookies get the `Secure` flag automatically when `X-Forwarded-Proto: https`.
+- Run a **single instance** — sessions and the SQLite file are local to the machine.
+- On Elastic Beanstalk / App Runner the disk is replaced on each deploy, so
+  admin edits and uploads are lost unless `DB_PATH` and `UPLOADS_DIR` point to a
+  persistent volume (EBS/EFS). On a plain EC2/Lightsail box this is not an issue.
+- On first boot with a new `DB_PATH`, the bundled `server/mepia.db` content is
+  copied there automatically.
+
 ## Project structure
 
 ```

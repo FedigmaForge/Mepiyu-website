@@ -4,9 +4,9 @@
   "description": "Trip planning website with admin dashboard for Mepiyu Wander Travels",
   "main": "server/server.js",
   "scripts": {
-    "start": "node server/server.js"
+    "start": "node --env-file-if-exists=.env server/server.js"
   },
   "engines": {
-    "node": ">=22.0.0"
+    "node": ">=22.13.0"
   }
 }

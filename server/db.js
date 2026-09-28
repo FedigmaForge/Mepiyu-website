@@ -3,8 +3,15 @@ const crypto = require('node:crypto');
 const path = require('node:path');
 const fs = require('node:fs');
 
-const DB_PATH = path.join(__dirname, 'mepia.db');
-const isNew = !fs.existsSync(DB_PATH);
+// DB_PATH lets you keep the database outside the code folder in production
+// (e.g. on an EBS / EFS volume) so redeploys don't wipe it.
+const DB_PATH = process.env.DB_PATH ? path.resolve(process.env.DB_PATH) : path.join(__dirname, 'mepia.db');
+fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
+if (!fs.existsSync(DB_PATH) && process.env.DB_PATH) {
+  // First boot with an external DB path: start from the bundled content DB if present
+  const bundled = path.join(__dirname, 'mepia.db');
+  if (fs.existsSync(bundled)) fs.copyFileSync(bundled, DB_PATH);
+}
 const db = new DatabaseSync(DB_PATH);
 
 db.exec(`
@@ -176,13 +183,30 @@ function seed() {
 
   const userCount = db.prepare('SELECT COUNT(*) AS c FROM admin_users').get().c;
   if (userCount === 0) {
+    const initial = process.env.ADMIN_PASSWORD || DEFAULT_ADMIN_PASSWORD;
     const salt = crypto.randomBytes(16).toString('hex');
-    const hash = hashPassword('mepia@admin1', salt);
+    const hash = hashPassword(initial, salt);
     db.prepare('INSERT INTO admin_users (username, salt, hash) VALUES (?, ?, ?)').run('admin', salt, hash);
-    console.log('Created default admin user -> username: admin | password: mepia@admin1 (change this after first login)');
+    console.log(process.env.ADMIN_PASSWORD
+      ? 'Created admin user "admin" with the password from ADMIN_PASSWORD'
+      : 'Created default admin user -> username: admin | password: mepia@admin1 (change this after first login)');
+  } else if (process.env.ADMIN_PASSWORD) {
+    // Lets you set/rotate the admin password from the server environment (never from git)
+    const user = db.prepare("SELECT * FROM admin_users WHERE username = 'admin'").get();
+    if (user && hashPassword(process.env.ADMIN_PASSWORD, user.salt) !== user.hash) {
+      const salt = crypto.randomBytes(16).toString('hex');
+      db.prepare("UPDATE admin_users SET salt = ?, hash = ? WHERE username = 'admin'").run(salt, hashPassword(process.env.ADMIN_PASSWORD, salt));
+      console.log('Admin password updated from ADMIN_PASSWORD environment variable');
+    }
   }
+}
+
+const DEFAULT_ADMIN_PASSWORD = 'mepia@admin1';
+function isUsingDefaultPassword() {
+  return db.prepare('SELECT salt, hash FROM admin_users').all()
+    .some(u => hashPassword(DEFAULT_ADMIN_PASSWORD, u.salt) === u.hash);
 }
 
 seed();
 
-module.exports = { db, hashPassword };
+module.exports = { db, hashPassword, isUsingDefaultPassword, DB_PATH };

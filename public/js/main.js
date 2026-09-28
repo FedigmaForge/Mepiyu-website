@@ -33,7 +33,10 @@
   }
 
   function waLink(number, text) {
-    return `https://wa.me/${number}?text=${encodeURIComponent(text)}`;
+    // wa.me needs the full international number; bare 10-digit numbers are treated as +91
+    let digits = String(number || '').replace(/\D/g, '').replace(/^0+/, '');
+    if (digits.length === 10) digits = '91' + digits;
+    return `https://wa.me/${digits}?text=${encodeURIComponent(text)}`;
   }
 
   function destTokens(name) {

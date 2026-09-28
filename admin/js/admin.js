@@ -355,8 +355,8 @@
     } catch (err) { toast(err.message, true); }
   });
 
-  function escapeHtml(str) { return String(str ?? '').replace(/[&<>]/g, s => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[s])); }
-  function escapeAttr(str) { return String(str ?? '').replace(/"/g, '&quot;'); }
+  function escapeHtml(str) { return String(str ?? '').replace(/[&<>"']/g, s => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[s])); }
+  function escapeAttr(str) { return escapeHtml(str); }
 
   checkSession();
 })();
